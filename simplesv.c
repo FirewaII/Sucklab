@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* create and bind a socket */
-    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
         free(data);
         err(EX_SOFTWARE, "in socket");
@@ -82,46 +82,65 @@ int main(int argc, char *argv[]) {
         err(EX_SOFTWARE, "in bind");
     }
 
-    /* receive data */
-    sin_len = sizeof(sin);
-    len = recvfrom(fd, data, data_len, 0, (struct sockaddr *) &sin, &sin_len);
-    if (len < 0) {
+    /* listen, SOMAXCONN is the queue's max length (default is 128) */
+    if (listen(fd, SOMAXCONN)) {
         free(data);
         close(fd);
-        err(EX_SOFTWARE, "in recvfrom");
+        err(EX_SOFTWARE, "in listen");
     }
+    while (1) {
+        int sock_accept = accept(fd, (struct sockaddr *) &sin, &sin_len);
+        if (!sock_accept) {
+            free(data);
+            close(sock_accept);
+            err(EX_SOFTWARE, "in accept");
+        }
+        /* receive data */
+        sin_len = sizeof(sin);
+        while (1) {
+            len = recvfrom(fd, data, data_len, 0, (struct sockaddr *) &sin, &sin_len);
+            if (len < 0) {
+                free(data);
+                close(sock_accept);
+                err(EX_SOFTWARE, "in recvfrom");
+            }
 
-    printf("got '%s' from IP address %s port %d\n", data, inet_ntoa(sin.sin_addr), ntohs(sin.sin_port));
+            printf("got '%s' from IP address %s port %d\n", data, inet_ntoa(sin.sin_addr), ntohs(sin.sin_port));
 
-    ch = strtol(data, &end, 10);
+            ch = strtol(data, &end, 10);
 
-    switch (errno) {
-        case EINVAL:
-            err(EX_DATAERR, "not an integer");
-        case ERANGE:
-            err(EX_DATAERR, "out of range");
-        default:
-            if (ch == 0 && data == end)
-                errx(EX_DATAERR, "no value");  // Linux returns 0 if no numerical value was given
-    }
+            switch (errno) {
+                case EINVAL:
+                    err(EX_DATAERR, "not an integer");
+                case ERANGE:
+                    err(EX_DATAERR, "out of range");
+                default:
+                    if (ch == 0 && data == end)
+                        errx(EX_DATAERR, "no value");  // Linux returns 0 if no numerical value was given
+            }
 
-    /* send data */
-    printf("integer value: %ld\n", ch);
-    long ch_squared = ch*ch;
-    sprintf(data, "%ld", ch_squared);
-    len = sendto(fd, data, data_len, 0, (struct sockaddr *) &sin, sin_len);
-    if (len < 0) {
-        free(data);
+            /* send data */
+            printf("integer value: %ld\n", ch);
+            long ch_squared = ch * ch;
+            sprintf(data, "%ld", ch_squared);
+            len = sendto(sock_accept, data, data_len, 0, (struct sockaddr *) &sin, sin_len);
+            if (len < 0) {
+                free(data);
+                close(sock_accept);
+                err(EX_SOFTWARE, "in sendto");
+            }
+
+            printf("got '%s' from IP address %s port %d\n", data, inet_ntoa(sin.sin_addr), ntohs(sin.sin_port));
+
+            /* cleanup */
+            free(data);
+            close(sock_accept);
+
+        }
+
         close(fd);
-        err(EX_SOFTWARE, "in sendto");
+
     }
-
-    printf("got '%s' from IP address %s port %d\n", data, inet_ntoa(sin.sin_addr), ntohs(sin.sin_port));
-
-
-    /* cleanup */
-    free(data);
-    close(fd);
 
     return EX_OK;
 }

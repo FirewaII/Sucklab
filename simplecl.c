@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
     memset(&hints, 0, sizeof(hints));
     hints.ai_flags = AI_ADDRCONFIG | AI_CANONNAME | AI_NUMERICSERV; // AI_PASSIVE
     hints.ai_family = AF_UNSPEC; // AF_INET AF_INET6
-    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_socktype = SOCK_STREAM;
     snprintf(service, sizeof(service), "%ld", port);
     if ((error = getaddrinfo(host, service, &hints, &ai)) != 0) {
         errx(EX_NOHOST, "(getaddrinfo) cannot resolve %s: %s", host, gai_strerror(error));
@@ -108,15 +108,22 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    /* send data */
     sin_len = sizeof(sin);
+    int sock_connect = connect(fd, (struct sockaddr * )&sin, sin_len);
+    if (!sock_connect){
+        free(data);
+        close(fd);
+        err(EX_SOFTWARE, "in connect");
+    }
+
+    /* send data */
     len = sendto(fd, data, data_len, 0, (struct sockaddr *) &sin, sin_len);
     if (len < 0) {
         free(data);
         close(fd);
         err(EX_SOFTWARE, "in sendto");
     }
-    
+
     /* receive data */
     len = recvfrom(fd, data, data_len, 0, (struct sockaddr *) &sin, &sin_len);
     if (len < 0) {
